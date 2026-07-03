@@ -22,6 +22,12 @@ pipeline {
     EXPO_APPLE_TEAM_TYPE = 'INDIVIDUAL'
     // Monorepo: EAS is driven from the app package.
     APP_DIR = 'packages/happy-app'
+    // The eas-agent runs as non-root (uid 1000) with npm prefix /usr, so
+    // `corepack enable` can't symlink pnpm into /usr/bin. Install the pnpm
+    // shim into a writable dir and put it on PATH for every stage. Version
+    // is pinned by the root package.json "packageManager": "pnpm@10.11.0".
+    COREPACK_HOME = '/home/jenkins/.corepack'
+    PATH = "/home/jenkins/.pnpm-bin:${PATH}"
   }
 
   stages {
@@ -31,13 +37,15 @@ pipeline {
     }
 
     stage('Install') {
-      // Workspace install at the repo root. corepack pins pnpm to the
-      // version in package.json ("packageManager"), matching local dev and
-      // Dockerfile.webapp.
+      // Workspace install at the repo root. corepack installs the pnpm shim
+      // into the writable /home/jenkins/.pnpm-bin (already on PATH via the
+      // environment block) and activates the pinned 10.11.0, then installs.
       options { retry(3) }
       steps {
         sh '''
-          corepack enable
+          mkdir -p /home/jenkins/.pnpm-bin
+          corepack enable --install-directory /home/jenkins/.pnpm-bin pnpm
+          corepack prepare pnpm@10.11.0 --activate
           pnpm install --frozen-lockfile
         '''
       }
