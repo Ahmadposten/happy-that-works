@@ -46,10 +46,15 @@ pipeline {
           mkdir -p /home/jenkins/.pnpm-bin
           corepack enable --install-directory /home/jenkins/.pnpm-bin pnpm
           corepack prepare pnpm@10.11.0 --activate
-          # Only install the happy-app subgraph. A full workspace install
-          # pulls codium's node-pty, whose native build needs `make` (absent
-          # on the eas-agent). Mirrors Dockerfile.webapp's --filter approach.
-          pnpm install --frozen-lockfile --filter happy-app...
+          # Install ONLY the happy-app subgraph. The repo .npmrc defaults to
+          # node-linker=hoisted, which flattens every workspace dep to root
+          # and builds codium's node-pty (needs `make`, absent here) even
+          # with --filter. Override to isolated (exactly like
+          # Dockerfile.webapp) so the filter truly excludes codium/node-pty.
+          SKIP_HAPPY_WIRE_BUILD=1 pnpm install --frozen-lockfile --filter happy-app... \
+            --config.node-linker=isolated --config.shamefully-hoist=false
+          # happy-app's typecheck imports @slopus/happy-wire's built output.
+          pnpm --filter @slopus/happy-wire build
         '''
       }
     }
