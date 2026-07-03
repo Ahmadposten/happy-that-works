@@ -72,10 +72,9 @@ spec:
       }
     }
 
-    stage('Ensure Namespace') {
-      options { retry(3) }
-      steps { container('jnlp') { sh 'kubectl apply -f deploy/web/k8s/namespace.yaml' } }
-    }
+    // No 'Ensure Namespace' stage: namespaces are cluster-scoped and the
+    // Jenkins SA only has a namespaced deployer Role in `happy` (which already
+    // exists — created at setup, tracked in deploy/web/k8s/namespace.yaml).
 
     stage('Build web bundle') {
       // node container. pnpm store lands in the workspace so it survives
