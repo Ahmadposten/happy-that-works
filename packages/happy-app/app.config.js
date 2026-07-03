@@ -87,7 +87,13 @@ export default {
                     ? { NSAllowsLocalNetworking: true }
                     : { NSAllowsLocalNetworking: true, NSAllowsArbitraryLoads: true }
             },
-            associatedDomains: variant === 'production' ? ["applinks:app.happy.engineering"] : []
+            // Universal links disabled: the app pairs via QR, the domain was
+            // the upstream author's, and the App ID's provisioning profile has
+            // no Associated Domains capability (Xcode fails otherwise). To
+            // enable later for happy.ahposten.com: turn on Associated Domains
+            // on the App ID, regenerate the profile, and host
+            // apple-app-site-association at happy.ahposten.com/.well-known/.
+            associatedDomains: []
         },
         android: {
             adaptiveIcon: {
