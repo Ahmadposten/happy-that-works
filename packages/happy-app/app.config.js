@@ -87,13 +87,13 @@ export default {
                     ? { NSAllowsLocalNetworking: true }
                     : { NSAllowsLocalNetworking: true, NSAllowsArbitraryLoads: true }
             },
-            // Universal links disabled: the app pairs via QR, the domain was
-            // the upstream author's, and the App ID's provisioning profile has
-            // no Associated Domains capability (Xcode fails otherwise). To
-            // enable later for happy.ahposten.com: turn on Associated Domains
-            // on the App ID, regenerate the profile, and host
-            // apple-app-site-association at happy.ahposten.com/.well-known/.
-            associatedDomains: []
+            // Universal links intentionally OMITTED (no associatedDomains key):
+            // an empty array is truthy, so Expo still emits an (empty)
+            // com.apple.developer.associated-domains entitlement, which the
+            // provisioning profile lacks and Xcode rejects. To enable later for
+            // happy.ahposten.com: add the Associated Domains capability to the
+            // App ID, regenerate the profile, host apple-app-site-association,
+            // then add `associatedDomains: ["applinks:happy.ahposten.com"]`.
         },
         android: {
             adaptiveIcon: {
