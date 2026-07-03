@@ -96,7 +96,11 @@ pipeline {
             sh '''
               echo "$ASC_KEY_P8_B64" | base64 -d > /tmp/asc-key.p8
               chmod 600 /tmp/asc-key.p8
-              EXPO_ASC_API_KEY_PATH=/tmp/asc-key.p8 \
+              # APP_ENV=production so app.config.js resolves the production
+              # bundle (com.ahposten.happyimproved) — without it, eas submit
+              # defaults to APP_ENV=development, targets the .dev bundle, and
+              # then fails trying to set up ASC credentials non-interactively.
+              APP_ENV=production EXPO_ASC_API_KEY_PATH=/tmp/asc-key.p8 \
                 eas submit -p ios --profile production --latest --non-interactive --no-wait
               rm -f /tmp/asc-key.p8
             '''
