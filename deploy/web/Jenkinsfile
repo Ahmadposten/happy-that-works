@@ -129,8 +129,8 @@ spec:
             def buildTimeIso = new Date().format("yyyy-MM-dd'T'HH:mm:ssXXX", TimeZone.getTimeZone('UTC'))
             sh """
               f=deploy/web/k8s/deployment.yaml
-              sed -i -E "s|(name: GIT_SHA[[:space:]]+value: )\\"unknown\\"|\\1\\"${shortSha}\\"|g" "\$f"
-              sed -i -E "s|(name: BUILD_TIME[[:space:]]+value: )\\"unknown\\"|\\1\\"${buildTimeIso}\\"|g" "\$f"
+              sed -i "s|__GIT_SHA__|${shortSha}|g" "\$f"
+              sed -i "s|__BUILD_TIME__|${buildTimeIso}|g" "\$f"
             """
           }
           sh 'kubectl apply -f deploy/web/k8s/service.yaml -n happy'
