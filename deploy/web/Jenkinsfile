@@ -22,9 +22,6 @@ spec:
   containers:
     - name: jnlp
       image: ahmadposten/jenkins-agent-kubectl:latest
-      volumeMounts:
-        - name: known-hosts
-          mountPath: /home/jenkins/.ssh
       resources:
         requests: { cpu: "200m", memory: "512Mi" }
         limits: { cpu: "1", memory: "1Gi" }
@@ -46,9 +43,6 @@ spec:
         requests: { cpu: "1", memory: "2Gi" }
         limits: { cpu: "4", memory: "4Gi" }
   volumes:
-    - name: known-hosts
-      configMap:
-        name: github-known-hosts
     - name: dockerhub
       secret:
         secretName: dockerhub-credentials
@@ -61,12 +55,21 @@ spec:
     timeout(time: 30, unit: 'MINUTES')
     buildDiscarder(logRotator(numToKeepStr: '20'))
     disableConcurrentBuilds()
+    // We do our own HTTPS checkout below (public repo, no SSH host keys),
+    // so skip the implicit SSH scm checkout that runs on the pod.
+    skipDefaultCheckout()
   }
 
   stages {
     stage('Checkout') {
       options { retry(3) }
-      steps { checkout scm }
+      steps {
+        // HTTPS clone of the public repo — no SSH, no known_hosts. Sets
+        // env.GIT_COMMIT for the image tag below.
+        checkout([$class: 'GitSCM',
+          branches: [[name: '*/main']],
+          userRemoteConfigs: [[url: 'https://github.com/Ahmadposten/happy-that-works.git']]])
+      }
     }
 
     stage('Ensure Namespace') {
