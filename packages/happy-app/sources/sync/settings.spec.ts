@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { settingsParse, applySettings, settingsDefaults, settingsToSyncPayload, type Settings } from './settings';
+import { settingsParse, settingsParsePending, applySettings, settingsDefaults, settingsToSyncPayload, type Settings } from './settings';
 
 describe('settings', () => {
     describe('settingsParse', () => {
@@ -465,6 +465,43 @@ describe('settings', () => {
 
             expect(merged.experiments).toBe(true);
             expect(merged.dismissedCLIWarnings).toEqual(pendingChanges.dismissedCLIWarnings);
+        });
+    });
+
+    describe('settingsParsePending', () => {
+        it('must not inject schema defaults for absent keys (phantom pending wipe)', () => {
+            // Regression: SettingsSchema.partial().parse({}) injects
+            // schemaVersion, agentDefaultOverrides: {} and dismissedCLIWarnings,
+            // which then got pushed as a full-blob write on every app start,
+            // wiping agent defaults account-wide.
+            expect(settingsParsePending({})).toEqual({});
+        });
+
+        it('should return empty object for invalid input', () => {
+            expect(settingsParsePending(null)).toEqual({});
+            expect(settingsParsePending(undefined)).toEqual({});
+            expect(settingsParsePending('x')).toEqual({});
+            expect(settingsParsePending([1, 2])).toEqual({});
+        });
+
+        it('should keep only keys present in the stored blob', () => {
+            const result = settingsParsePending({
+                agentDefaultOverrides: { claude: { modelMode: 'claude-fable-5' } },
+                experiments: true,
+            });
+            expect(result).toEqual({
+                agentDefaultOverrides: { claude: { modelMode: 'claude-fable-5' } },
+                experiments: true,
+            });
+        });
+
+        it('should drop invalid and unknown fields without touching valid ones', () => {
+            const result = settingsParsePending({
+                experiments: 'not-a-boolean',
+                someUnknownField: 42,
+                viewInline: true,
+            });
+            expect(result).toEqual({ viewInline: true });
         });
     });
 });

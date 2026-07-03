@@ -170,6 +170,28 @@ export function settingsParse(settings: unknown): Settings {
 // NOTE: May be something more sophisticated here around defaults and merging, but for now this is fine.
 //
 
+export function settingsParsePending(value: unknown): Partial<Settings> {
+    // NEVER run SettingsSchema.partial().parse() here: zod injects .default()
+    // fields (schemaVersion, agentDefaultOverrides, dismissedCLIWarnings) even
+    // for keys absent from the input. A phantom pending agentDefaultOverrides: {}
+    // would be merged over the real settings and pushed as a full-blob write on
+    // every app/window start, wiping those fields account-wide. Only validate
+    // keys that actually exist in the stored blob.
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return {};
+    }
+    const result: Record<string, unknown> = {};
+    for (const [key, fieldValue] of Object.entries(value)) {
+        const fieldSchema = (SettingsSchema.shape as Record<string, z.ZodTypeAny>)[key];
+        if (!fieldSchema) continue;
+        const fieldParsed = fieldSchema.safeParse(fieldValue);
+        if (fieldParsed.success) {
+            result[key] = fieldParsed.data;
+        }
+    }
+    return result as Partial<Settings>;
+}
+
 export function applySettings(settings: Settings, delta: Partial<Settings>): Settings {
     // Original behavior: start with settings, apply delta, fill in missing with defaults
     const result = { ...settings, ...delta };

@@ -1,5 +1,5 @@
 import { MMKV } from 'react-native-mmkv';
-import { Settings, settingsDefaults, settingsParse, settingsToSyncPayload, SettingsSchema } from './settings';
+import { Settings, settingsDefaults, settingsParse, settingsParsePending, settingsToSyncPayload } from './settings';
 import { LocalSettings, localSettingsDefaults, localSettingsParse } from './localSettings';
 import { Purchases, purchasesDefaults, purchasesParse } from './purchases';
 import { Profile, profileDefaults, profileParse } from './profile';
@@ -50,7 +50,7 @@ export function loadPendingSettings(): Partial<Settings> {
     if (pending) {
         try {
             const parsed = JSON.parse(pending);
-            return SettingsSchema.partial().parse(parsed);
+            return settingsParsePending(parsed);
         } catch (e) {
             console.error('Failed to parse pending settings', e);
             return {};
