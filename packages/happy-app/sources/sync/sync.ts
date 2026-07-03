@@ -740,6 +740,16 @@ class Sync {
         const merged = Object.keys(this.pendingSettings).length > 0
             ? applySettings(serverSettings, this.pendingSettings)
             : serverSettings;
+        // Tripwire: a newer server blob dropping previously-set agent defaults
+        // means some client pushed a wipe. Log enough to identify the write.
+        const prev = storage.getState();
+        if (
+            (prev.settingsVersion === null || prev.settingsVersion < version) &&
+            Object.keys(prev.settings.agentDefaultOverrides ?? {}).length > 0 &&
+            Object.keys(merged.agentDefaultOverrides ?? {}).length === 0
+        ) {
+            console.error(`[settings] ⚠️ agentDefaultOverrides wiped by incoming server settings (localVersion=${prev.settingsVersion}, incomingVersion=${version}, pendingKeys=${Object.keys(this.pendingSettings).join(',') || 'none'})`);
+        }
         storage.getState().applySettings(merged, version);
     }
 
@@ -2361,6 +2371,15 @@ class Sync {
             if (accountUpdate.settings?.value) {
                 try {
                     const decryptedSettings = await this.encryption.decryptRaw(accountUpdate.settings.value);
+                    if (decryptedSettings === null) {
+                        // Same wipe vector as the REST paths: settingsParse(null)
+                        // returns factory defaults, which would be applied at the
+                        // incoming (newer) version and pushed server-side by the
+                        // next local write. Skip and reconcile via REST instead.
+                        console.error('❌ Failed to decrypt settings from account update, skipping (will refetch)');
+                        this.settingsSync.invalidate();
+                        return;
+                    }
                     const parsedSettings = settingsParse(decryptedSettings);
 
                     // Version compatibility check
