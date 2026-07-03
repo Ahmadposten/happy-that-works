@@ -38,6 +38,13 @@ export const AGENT_MODELS: AgentModel[] = [
         group: 'Anthropic',
         model: 'opus',
     },
+    {
+        id: 'claude-fable',
+        engine: 'claude',
+        label: 'Fable',
+        group: 'Anthropic',
+        model: 'claude-fable-5',
+    },
 ]
 
 export function agentModelById(id: string): AgentModel {

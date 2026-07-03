@@ -5,6 +5,32 @@ import { Usage } from '../api/types';
  * Source: https://www.anthropic.com/api (approximate as of early 2025)
  */
 export const PRICING = {
+    // --- Current Models ---
+    'claude-fable-5': {
+        input: 10.0,
+        output: 50.0,
+        cache_write: 12.50,
+        cache_read: 1.00
+    },
+    'claude-opus-4-8': {
+        input: 5.0,
+        output: 25.0,
+        cache_write: 6.25,
+        cache_read: 0.50
+    },
+    'claude-sonnet-4-6': {
+        input: 3.0,
+        output: 15.0,
+        cache_write: 3.75,
+        cache_read: 0.30
+    },
+    'claude-haiku-4-5': {
+        input: 1.0,
+        output: 5.0,
+        cache_write: 1.25,
+        cache_read: 0.10
+    },
+
     // --- Claude 4 & Future Models ---
     'claude-4.5-opus': {
         input: 5.0,
@@ -99,7 +125,10 @@ export function calculateCost(usage: Usage, modelId?: string): { total: number, 
     // Fallback if model not found
     if (!pricing) {
         // Try fuzzy matching for common aliases
-        if (modelId?.includes('opus')) {
+        if (modelId?.includes('fable')) {
+            pricing = PRICING['claude-fable-5'];
+        }
+        else if (modelId?.includes('opus')) {
             if (modelId.includes('4.5')) pricing = PRICING['claude-4.5-opus'];
             else if (modelId.includes('4.1')) pricing = PRICING['claude-4.1-opus'];
             else if (modelId.includes('4')) pricing = PRICING['claude-4-opus'];
