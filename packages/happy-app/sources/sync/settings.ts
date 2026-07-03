@@ -131,12 +131,24 @@ export function settingsParse(settings: unknown): Settings {
 
     const parsed = SettingsSchemaPartial.safeParse(settings);
     if (!parsed.success) {
-        // For invalid settings, preserve unknown fields but use defaults for known fields
-        const unknownFields = { ...(settings as any) };
-        // Remove all known schema fields from unknownFields
-        const knownFields = Object.keys(SettingsSchema.shape);
-        knownFields.forEach(key => delete unknownFields[key]);
-        return { ...settingsDefaults, ...unknownFields };
+        // Salvage valid fields one by one: a single invalid field must not
+        // reset every known field to defaults, because the next full-blob
+        // push would persist that wipe server-side for all devices.
+        const input = settings as Record<string, unknown>;
+        const salvaged: Record<string, unknown> = {};
+        for (const [key, fieldSchema] of Object.entries(SettingsSchema.shape)) {
+            if (!(key in input)) continue;
+            const fieldParsed = (fieldSchema as z.ZodTypeAny).safeParse(input[key]);
+            if (fieldParsed.success) {
+                salvaged[key] = fieldParsed.data;
+            }
+        }
+        if (salvaged.preferredLanguage === 'zh') {
+            salvaged.preferredLanguage = 'zh-Hans';
+        }
+        const unknownFields = { ...input };
+        Object.keys(SettingsSchema.shape).forEach(key => delete unknownFields[key]);
+        return { ...settingsDefaults, ...salvaged, ...unknownFields } as Settings;
     }
 
     // Migration: Convert old 'zh' language code to 'zh-Hans'

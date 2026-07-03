@@ -1576,10 +1576,18 @@ class Sync {
                     break;
                 }
                 if (data.error === 'version-mismatch') {
-                    // Parse server settings
-                    const serverSettings = data.currentSettings
-                        ? settingsParse(await this.encryption.decryptRaw(data.currentSettings))
-                        : { ...settingsDefaults };
+                    // Parse server settings. A failed decrypt must abort the sync
+                    // (retried later): treating it as defaults would merge pending
+                    // changes onto a factory-reset base and push that blob at the
+                    // current version, permanently wiping the user's settings.
+                    let serverSettings: Settings = { ...settingsDefaults };
+                    if (data.currentSettings) {
+                        const decrypted = await this.encryption.decryptRaw(data.currentSettings);
+                        if (decrypted === null) {
+                            throw new Error('Failed to decrypt server settings');
+                        }
+                        serverSettings = settingsParse(decrypted);
+                    }
 
                     // Merge: server base + our pending changes (our changes win)
                     const mergedSettings = applySettings(serverSettings, this.pendingSettings);
@@ -1627,10 +1635,16 @@ class Sync {
             settingsVersion: number
         };
 
-        // Parse response
+        // Parse response. A failed decrypt must not be applied as factory
+        // defaults at the current version — the next settings write would push
+        // the wipe to the server for every device. Throw so the sync retries.
         let parsedSettings: Settings;
         if (data.settings) {
-            parsedSettings = settingsParse(await this.encryption.decryptRaw(data.settings));
+            const decrypted = await this.encryption.decryptRaw(data.settings);
+            if (decrypted === null) {
+                throw new Error('Failed to decrypt server settings');
+            }
+            parsedSettings = settingsParse(decrypted);
         } else {
             parsedSettings = { ...settingsDefaults };
         }

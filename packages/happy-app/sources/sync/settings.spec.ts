@@ -32,6 +32,19 @@ describe('settings', () => {
             expect(settingsParse(invalidSettings)).toEqual(settingsDefaults);
         });
 
+        it('should keep valid fields when another field is invalid', () => {
+            const result = settingsParse({
+                viewInline: 'not a boolean',
+                avatarStyle: 'gradient',
+                agentDefaultOverrides: { claude: { modelMode: 'claude-fable-5' } },
+            });
+            expect(result).toEqual({
+                ...settingsDefaults,
+                avatarStyle: 'gradient',
+                agentDefaultOverrides: { claude: { modelMode: 'claude-fable-5' } },
+            });
+        });
+
         it('should preserve unknown fields (loose schema)', () => {
             const settingsWithExtra = {
                 viewInline: true,
@@ -189,6 +202,7 @@ describe('settings', () => {
                 avatarStyle: 'brutalist',
                 showFlavorIcons: false,
                 hideInactiveSessions: false,
+                sortSessionsByActivity: false,
                 expResumeSession: false,
                 fileDiffsSidebar: false,
                 groupToolCalls: false,
