@@ -1,5 +1,8 @@
 pipeline {
-  agent { kubernetes { label 'kaniko'; defaultContainer 'jnlp' } }
+  // onprem2: 16-CPU kaniko container (vs the 6-CPU 'kaniko' agent) — the
+  // expo web export (Metro) and kaniko snapshotting are CPU-bound, so this
+  // is markedly faster. Same onprem-2 node, same Docker Hub push creds.
+  agent { kubernetes { label 'onprem2'; defaultContainer 'jnlp' } }
 
   options {
     timeout(time: 60, unit: 'MINUTES')
