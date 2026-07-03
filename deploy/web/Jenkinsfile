@@ -22,6 +22,9 @@ spec:
   containers:
     - name: jnlp
       image: ahmadposten/jenkins-agent-kubectl:latest
+      volumeMounts:
+        - name: known-hosts
+          mountPath: /home/jenkins/.ssh
       resources:
         requests: { cpu: "200m", memory: "512Mi" }
         limits: { cpu: "1", memory: "1Gi" }
@@ -43,6 +46,9 @@ spec:
         requests: { cpu: "1", memory: "2Gi" }
         limits: { cpu: "4", memory: "4Gi" }
   volumes:
+    - name: known-hosts
+      configMap:
+        name: github-known-hosts
     - name: dockerhub
       secret:
         secretName: dockerhub-credentials
