@@ -46,7 +46,10 @@ pipeline {
           mkdir -p /home/jenkins/.pnpm-bin
           corepack enable --install-directory /home/jenkins/.pnpm-bin pnpm
           corepack prepare pnpm@10.11.0 --activate
-          pnpm install --frozen-lockfile
+          # Only install the happy-app subgraph. A full workspace install
+          # pulls codium's node-pty, whose native build needs `make` (absent
+          # on the eas-agent). Mirrors Dockerfile.webapp's --filter approach.
+          pnpm install --frozen-lockfile --filter happy-app...
         '''
       }
     }
