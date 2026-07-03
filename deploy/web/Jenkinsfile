@@ -12,6 +12,7 @@ pipeline {
 apiVersion: v1
 kind: Pod
 spec:
+  serviceAccountName: jenkins
   nodeSelector:
     site: onprem2
   tolerations:
@@ -143,7 +144,9 @@ spec:
 
   post {
     always {
-      deleteDir()
+      // The isolated pnpm install links read-only files into node_modules;
+      // make them writable first so cleanup can't fail the build.
+      sh 'chmod -R u+w "$WORKSPACE" 2>/dev/null; rm -rf "$WORKSPACE"/* "$WORKSPACE"/.[!.]* 2>/dev/null; true'
     }
   }
 }
