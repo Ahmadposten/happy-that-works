@@ -80,7 +80,8 @@ pipeline {
             sh '''
               echo "$ASC_KEY_P8_B64" | base64 -d > /tmp/asc-key.p8
               chmod 600 /tmp/asc-key.p8
-              eas submit -p ios --profile production --latest --non-interactive --no-wait
+              EXPO_ASC_API_KEY_PATH=/tmp/asc-key.p8 \
+                eas submit -p ios --profile production --latest --non-interactive --no-wait
               rm -f /tmp/asc-key.p8
             '''
           }
