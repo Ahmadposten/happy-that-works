@@ -509,7 +509,7 @@ export const ru: TranslationStructure = {
     },
 
     sidebar: {
-        sessionsTitle: 'Happy',
+        sessionsTitle: 'Happy-Improved',
         showArchived: 'Показать архив',
         hideArchived: 'Скрыть архив',
         newSession: 'Новая сессия',

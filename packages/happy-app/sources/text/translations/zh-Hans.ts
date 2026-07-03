@@ -494,7 +494,7 @@ export const zhHans: TranslationStructure = {
     },
 
     sidebar: {
-        sessionsTitle: 'Happy',
+        sessionsTitle: 'Happy-Improved',
         showArchived: '显示已归档',
         hideArchived: '隐藏已归档',
         newSession: '新建会话',

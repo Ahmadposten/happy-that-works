@@ -491,7 +491,7 @@ export const it: TranslationStructure = {
     },
 
     sidebar: {
-        sessionsTitle: 'Happy',
+        sessionsTitle: 'Happy-Improved',
         showArchived: 'Mostra archiviate',
         hideArchived: 'Nascondi archiviate',
         newSession: 'Nuova sessione',

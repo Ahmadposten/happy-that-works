@@ -493,7 +493,7 @@ export const es: TranslationStructure = {
     },
 
     sidebar: {
-        sessionsTitle: 'Happy',
+        sessionsTitle: 'Happy-Improved',
         showArchived: 'Mostrar archivadas',
         hideArchived: 'Ocultar archivadas',
         newSession: 'Nueva sesión',

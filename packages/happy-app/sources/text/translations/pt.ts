@@ -492,7 +492,7 @@ export const pt: TranslationStructure = {
     },
 
     sidebar: {
-        sessionsTitle: 'Happy',
+        sessionsTitle: 'Happy-Improved',
         showArchived: 'Mostrar arquivadas',
         hideArchived: 'Ocultar arquivadas',
         newSession: 'Nova sessão',

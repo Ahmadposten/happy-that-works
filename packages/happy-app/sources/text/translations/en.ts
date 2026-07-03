@@ -507,7 +507,7 @@ export const en: TranslationStructure = {
     },
 
     sidebar: {
-        sessionsTitle: 'Happy',
+        sessionsTitle: 'Happy-Improved',
         showArchived: 'Show archived',
         hideArchived: 'Hide archived',
         newSession: 'New session',

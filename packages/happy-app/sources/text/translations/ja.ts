@@ -494,7 +494,7 @@ export const ja: TranslationStructure = {
     },
 
     sidebar: {
-        sessionsTitle: 'Happy',
+        sessionsTitle: 'Happy-Improved',
         showArchived: 'アーカイブを表示',
         hideArchived: 'アーカイブを非表示',
         newSession: '新しいセッション',

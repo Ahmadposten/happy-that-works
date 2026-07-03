@@ -493,7 +493,7 @@ export const zhHant: TranslationStructure = {
     },
 
     sidebar: {
-        sessionsTitle: 'Happy',
+        sessionsTitle: 'Happy-Improved',
         showArchived: '顯示已封存',
         hideArchived: '隱藏已封存',
         newSession: '新建對話',
