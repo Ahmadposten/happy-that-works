@@ -1,11 +1,58 @@
 pipeline {
-  // onprem2: 16-CPU kaniko container (vs the 6-CPU 'kaniko' agent) — the
-  // expo web export (Metro) and kaniko snapshotting are CPU-bound, so this
-  // is markedly faster. Same onprem-2 node, same Docker Hub push creds.
-  agent { kubernetes { label 'onprem2'; defaultContainer 'jnlp' } }
+  // One pod, three containers sharing the workspace:
+  //   node   — builds the Expo web export at full CPU (Metro is CPU-bound)
+  //   kaniko — packages ONLY the small web-dist into an nginx image
+  //   jnlp   — checkout + kubectl (kubectl-capable agent image)
+  // The old design ran the whole build inside kaniko, so kaniko snapshotted
+  // the monorepo node_modules after every RUN -> ~40 min. Building in node and
+  // letting kaniko touch only ~40 MB of static output fixes that.
+  agent {
+    kubernetes {
+      yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  nodeSelector:
+    site: onprem2
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: ci
+      effect: NoSchedule
+  containers:
+    - name: jnlp
+      image: ahmadposten/jenkins-agent-kubectl:latest
+      resources:
+        requests: { cpu: "200m", memory: "512Mi" }
+        limits: { cpu: "1", memory: "1Gi" }
+    - name: node
+      image: node:20-alpine
+      command: ["cat"]
+      tty: true
+      resources:
+        requests: { cpu: "6", memory: "6Gi" }
+        limits: { cpu: "16", memory: "16Gi" }
+    - name: kaniko
+      image: gcr.io/kaniko-project/executor:debug
+      command: ["/busybox/cat"]
+      tty: true
+      volumeMounts:
+        - name: dockerhub
+          mountPath: /kaniko/.docker
+      resources:
+        requests: { cpu: "1", memory: "2Gi" }
+        limits: { cpu: "4", memory: "4Gi" }
+  volumes:
+    - name: dockerhub
+      secret:
+        secretName: dockerhub-credentials
+'''
+      defaultContainer 'node'
+    }
+  }
 
   options {
-    timeout(time: 60, unit: 'MINUTES')
+    timeout(time: 30, unit: 'MINUTES')
     buildDiscarder(logRotator(numToKeepStr: '20'))
     disableConcurrentBuilds()
   }
@@ -17,42 +64,48 @@ pipeline {
     }
 
     stage('Ensure Namespace') {
-      // First-deploy guard: the apply commands below assume the `happy`
-      // namespace exists. Apply it before anything else so a fresh cluster
-      // bootstraps cleanly.
       options { retry(3) }
+      steps { container('jnlp') { sh 'kubectl apply -f deploy/web/k8s/namespace.yaml' } }
+    }
+
+    stage('Build web bundle') {
+      // node container. pnpm store lands in the workspace so it survives
+      // within the build; expo export runs Metro at up to 16 CPU.
       steps {
-        sh 'kubectl apply -f deploy/web/k8s/namespace.yaml'
+        container('node') {
+          sh '''
+            set -e
+            export COREPACK_HOME=/tmp/corepack
+            mkdir -p /tmp/pnpm-bin
+            corepack enable --install-directory /tmp/pnpm-bin pnpm
+            export PATH=/tmp/pnpm-bin:$PATH
+            corepack prepare pnpm@10.11.0 --activate
+            export APP_ENV=production NODE_ENV=production SHARP_IGNORE_GLOBAL_LIBVIPS=1
+            # isolated linker + filter: install only the happy-app subgraph
+            # (excludes codium/node-pty), matching Dockerfile.webapp.
+            SKIP_HAPPY_WIRE_BUILD=1 pnpm install --frozen-lockfile --filter happy-app... \
+              --config.node-linker=isolated --config.shamefully-hoist=false
+            pnpm --filter @slopus/happy-wire build
+            pnpm --filter happy-app exec expo export --platform web --output-dir web-dist
+          '''
+        }
       }
     }
 
-    stage('Build & Push') {
-      // Builds the Expo web export (Dockerfile.webapp at the repo root) and
-      // pushes to Docker Hub. The `kaniko` pod template already carries the
-      // Docker Hub push credentials (same one benjamins-web / quietplan use),
-      // so no explicit docker login is needed here.
-      //
-      // HAPPY_SERVER_URL is left unset: the web app is a pure client and
-      // falls back to the default relay (https://api.cluster-fluster.com).
-      // To pin a self-hosted relay, add:
-      //   --build-arg HAPPY_SERVER_URL=https://<your-relay>
+    stage('Package & Push') {
+      // kaniko snapshots only web-dist + nginx base. Fast.
       options { retry(3) }
       steps {
         container('kaniko') {
           script {
             def shortSha = env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'unknown'
-            def buildTimeIso = new Date().format("yyyy-MM-dd'T'HH:mm:ssXXX", TimeZone.getTimeZone('UTC'))
             sh """/kaniko/executor \
               --context=dir://${WORKSPACE} \
-              --dockerfile=${WORKSPACE}/Dockerfile.webapp \
+              --dockerfile=${WORKSPACE}/deploy/web/Dockerfile.package \
               --destination=ahmadposten/happy-improved-web:latest \
               --destination=ahmadposten/happy-improved-web:git-${shortSha} \
               --cache=true \
-              --cache-repo=ahmadposten/happy-improved-web-cache \
-              --snapshot-mode=redo \
-              --compressed-caching=false \
-              --build-arg HAPPY_BUILD_COMMIT_SHA=${shortSha} \
-              --build-arg HAPPY_BUILD_COMMIT_TIMESTAMP=${buildTimeIso}"""
+              --cache-repo=ahmadposten/happy-improved-web-cache"""
           }
         }
       }
@@ -61,22 +114,21 @@ pipeline {
     stage('Deploy') {
       options { retry(3) }
       steps {
-        script {
-          def shortSha = env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'unknown'
-          def buildTimeIso = new Date().format("yyyy-MM-dd'T'HH:mm:ssXXX", TimeZone.getTimeZone('UTC'))
-          // Stamp GIT_SHA / BUILD_TIME into the Deployment env (mirrors
-          // benjamins-web). The image is pulled by :latest, and pinning the
-          // env forces a fresh rollout even when the tag is unchanged.
-          sh """
-            f=deploy/web/k8s/deployment.yaml
-            sed -i -E "s|(name: GIT_SHA[[:space:]]+value: )\\"unknown\\"|\\1\\"${shortSha}\\"|g" "\$f"
-            sed -i -E "s|(name: BUILD_TIME[[:space:]]+value: )\\"unknown\\"|\\1\\"${buildTimeIso}\\"|g" "\$f"
-          """
+        container('jnlp') {
+          script {
+            def shortSha = env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'unknown'
+            def buildTimeIso = new Date().format("yyyy-MM-dd'T'HH:mm:ssXXX", TimeZone.getTimeZone('UTC'))
+            sh """
+              f=deploy/web/k8s/deployment.yaml
+              sed -i -E "s|(name: GIT_SHA[[:space:]]+value: )\\"unknown\\"|\\1\\"${shortSha}\\"|g" "\$f"
+              sed -i -E "s|(name: BUILD_TIME[[:space:]]+value: )\\"unknown\\"|\\1\\"${buildTimeIso}\\"|g" "\$f"
+            """
+          }
+          sh 'kubectl apply -f deploy/web/k8s/service.yaml -n happy'
+          sh 'kubectl apply -f deploy/web/k8s/deployment.yaml -n happy'
+          sh 'kubectl rollout restart deployment/happy-web -n happy'
+          sh 'kubectl rollout status deployment/happy-web -n happy --timeout=300s'
         }
-        sh 'kubectl apply -f deploy/web/k8s/service.yaml -n happy'
-        sh 'kubectl apply -f deploy/web/k8s/deployment.yaml -n happy'
-        sh 'kubectl rollout restart deployment/happy-web -n happy'
-        sh 'kubectl rollout status deployment/happy-web -n happy --timeout=300s'
       }
     }
   }
