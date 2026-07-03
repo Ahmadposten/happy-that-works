@@ -1,0 +1,86 @@
+pipeline {
+  agent { kubernetes { label 'kaniko'; defaultContainer 'jnlp' } }
+
+  options {
+    timeout(time: 60, unit: 'MINUTES')
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+    disableConcurrentBuilds()
+  }
+
+  stages {
+    stage('Checkout') {
+      options { retry(3) }
+      steps { checkout scm }
+    }
+
+    stage('Ensure Namespace') {
+      // First-deploy guard: the apply commands below assume the `happy`
+      // namespace exists. Apply it before anything else so a fresh cluster
+      // bootstraps cleanly.
+      options { retry(3) }
+      steps {
+        sh 'kubectl apply -f deploy/web/k8s/namespace.yaml'
+      }
+    }
+
+    stage('Build & Push') {
+      // Builds the Expo web export (Dockerfile.webapp at the repo root) and
+      // pushes to Docker Hub. The `kaniko` pod template already carries the
+      // Docker Hub push credentials (same one benjamins-web / quietplan use),
+      // so no explicit docker login is needed here.
+      //
+      // HAPPY_SERVER_URL is left unset: the web app is a pure client and
+      // falls back to the default relay (https://api.cluster-fluster.com).
+      // To pin a self-hosted relay, add:
+      //   --build-arg HAPPY_SERVER_URL=https://<your-relay>
+      options { retry(3) }
+      steps {
+        container('kaniko') {
+          script {
+            def shortSha = env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'unknown'
+            def buildTimeIso = new Date().format("yyyy-MM-dd'T'HH:mm:ssXXX", TimeZone.getTimeZone('UTC'))
+            sh """/kaniko/executor \
+              --context=dir://${WORKSPACE} \
+              --dockerfile=${WORKSPACE}/Dockerfile.webapp \
+              --destination=ahmadposten/happy-improved-web:latest \
+              --destination=ahmadposten/happy-improved-web:git-${shortSha} \
+              --cache=true \
+              --cache-repo=ahmadposten/happy-improved-web-cache \
+              --snapshot-mode=redo \
+              --compressed-caching=false \
+              --build-arg HAPPY_BUILD_COMMIT_SHA=${shortSha} \
+              --build-arg HAPPY_BUILD_COMMIT_TIMESTAMP=${buildTimeIso}"""
+          }
+        }
+      }
+    }
+
+    stage('Deploy') {
+      options { retry(3) }
+      steps {
+        script {
+          def shortSha = env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'unknown'
+          def buildTimeIso = new Date().format("yyyy-MM-dd'T'HH:mm:ssXXX", TimeZone.getTimeZone('UTC'))
+          // Stamp GIT_SHA / BUILD_TIME into the Deployment env (mirrors
+          // benjamins-web). The image is pulled by :latest, and pinning the
+          // env forces a fresh rollout even when the tag is unchanged.
+          sh """
+            f=deploy/web/k8s/deployment.yaml
+            sed -i -E "s|(name: GIT_SHA[[:space:]]+value: )\\"unknown\\"|\\1\\"${shortSha}\\"|g" "\$f"
+            sed -i -E "s|(name: BUILD_TIME[[:space:]]+value: )\\"unknown\\"|\\1\\"${buildTimeIso}\\"|g" "\$f"
+          """
+        }
+        sh 'kubectl apply -f deploy/web/k8s/service.yaml -n happy'
+        sh 'kubectl apply -f deploy/web/k8s/deployment.yaml -n happy'
+        sh 'kubectl rollout restart deployment/happy-web -n happy'
+        sh 'kubectl rollout status deployment/happy-web -n happy --timeout=300s'
+      }
+    }
+  }
+
+  post {
+    always {
+      deleteDir()
+    }
+  }
+}

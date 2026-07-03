@@ -1,0 +1,93 @@
+pipeline {
+  // Reuses the same `eas` Jenkins agent pod template that benjamins-mobile
+  // uses (Node + eas-cli). The happy app is a pnpm monorepo, so all EAS
+  // commands run from packages/happy-app after a workspace install.
+  agent { kubernetes { label 'eas'; defaultContainer 'jnlp' } }
+
+  options {
+    timeout(time: 180, unit: 'MINUTES')
+    buildDiscarder(logRotator(numToKeepStr: '10'))
+    disableConcurrentBuilds()
+  }
+
+  environment {
+    // These four credentials are the SAME ones benjamins-mobile already
+    // uses. App Store Connect API keys are team-wide (not per-app), so the
+    // existing key works for any app under Apple team H2XR8XWZXW. EXPO_TOKEN
+    // must belong to the Expo account that owns the happy EAS project.
+    EXPO_TOKEN         = credentials('expo-token')
+    EXPO_ASC_KEY_ID    = credentials('asc-key-id')
+    EXPO_ASC_ISSUER_ID = credentials('asc-issuer-id')
+    EXPO_APPLE_TEAM_ID = 'H2XR8XWZXW'
+    EXPO_APPLE_TEAM_TYPE = 'INDIVIDUAL'
+    // Monorepo: EAS is driven from the app package.
+    APP_DIR = 'packages/happy-app'
+  }
+
+  stages {
+    stage('Checkout') {
+      options { retry(3) }
+      steps { checkout scm }
+    }
+
+    stage('Install') {
+      // Workspace install at the repo root. corepack pins pnpm to the
+      // version in package.json ("packageManager"), matching local dev and
+      // Dockerfile.webapp.
+      options { retry(3) }
+      steps {
+        sh '''
+          corepack enable
+          pnpm install --frozen-lockfile
+        '''
+      }
+    }
+
+    stage('Typecheck') {
+      // Fast gate before spending a paid EAS build. tsc --noEmit.
+      steps {
+        dir("${APP_DIR}") {
+          sh 'pnpm typecheck'
+        }
+      }
+    }
+
+    stage('EAS Build — iOS (production)') {
+      // retry(1) is deliberate: each attempt is a real EAS build that
+      // consumes paid build credits. The ASC .p8 is materialised from a
+      // base64 Jenkins secret, used, then removed.
+      options { retry(1) }
+      steps {
+        dir("${APP_DIR}") {
+          withCredentials([string(credentialsId: 'asc-key-p8', variable: 'ASC_KEY_P8_B64')]) {
+            sh '''
+              echo "$ASC_KEY_P8_B64" | base64 -d > /tmp/asc-key.p8
+              chmod 600 /tmp/asc-key.p8
+              EXPO_ASC_API_KEY_PATH=/tmp/asc-key.p8 \
+                eas build -p ios --profile production --non-interactive --wait
+              rm -f /tmp/asc-key.p8
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Submit to TestFlight') {
+      options { retry(3) }
+      steps {
+        dir("${APP_DIR}") {
+          withCredentials([string(credentialsId: 'asc-key-p8', variable: 'ASC_KEY_P8_B64')]) {
+            sh '''
+              echo "$ASC_KEY_P8_B64" | base64 -d > /tmp/asc-key.p8
+              chmod 600 /tmp/asc-key.p8
+              eas submit -p ios --profile production --latest --non-interactive --no-wait
+              rm -f /tmp/asc-key.p8
+            '''
+          }
+        }
+      }
+    }
+  }
+
+  post { always { cleanWs() } }
+}
