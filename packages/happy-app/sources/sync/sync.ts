@@ -737,18 +737,23 @@ class Sync {
 
     /** Server sent us settings — merge any pending local changes on top, then apply as one update. */
     private applyServerSettings = (serverSettings: Settings, version: number) => {
-        const merged = Object.keys(this.pendingSettings).length > 0
+        let merged = Object.keys(this.pendingSettings).length > 0
             ? applySettings(serverSettings, this.pendingSettings)
             : serverSettings;
-        // Tripwire: a newer server blob dropping previously-set agent defaults
-        // means some client pushed a wipe. Log enough to identify the write.
+        // Tripwire + guard (upstream PR #1395): settingsToSyncPayload strips an
+        // empty agentDefaultOverrides from payloads, so its absence in a server
+        // blob is ambiguous — "no info", not "user cleared it". Never let an
+        // empty incoming value erase a non-empty local one; our next settings
+        // write re-pushes the preserved value to the server (self-healing).
+        // Tradeoff: a cross-device "clear overrides" won't propagate.
         const prev = storage.getState();
         if (
             (prev.settingsVersion === null || prev.settingsVersion < version) &&
             Object.keys(prev.settings.agentDefaultOverrides ?? {}).length > 0 &&
             Object.keys(merged.agentDefaultOverrides ?? {}).length === 0
         ) {
-            console.error(`[settings] ⚠️ agentDefaultOverrides wiped by incoming server settings (localVersion=${prev.settingsVersion}, incomingVersion=${version}, pendingKeys=${Object.keys(this.pendingSettings).join(',') || 'none'})`);
+            console.error(`[settings] ⚠️ incoming server settings dropped agentDefaultOverrides — preserving local value (localVersion=${prev.settingsVersion}, incomingVersion=${version}, pendingKeys=${Object.keys(this.pendingSettings).join(',') || 'none'})`);
+            merged = { ...merged, agentDefaultOverrides: prev.settings.agentDefaultOverrides };
         }
         storage.getState().applySettings(merged, version);
     }
