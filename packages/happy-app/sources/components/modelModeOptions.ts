@@ -216,7 +216,13 @@ export function getClaudeEffortLevels(): EffortLevel[] {
 }
 
 export function getCodexEffortLevels(): EffortLevel[] {
+    // Authoritative set from `codex --version 0.137.0` config parser:
+    // `expected one of 'none', 'minimal', 'low', 'medium', 'high', 'xhigh'`.
+    // Wire-side validator in CLI (runCodex.ts VALID_REMOTE_EFFORTS) already
+    // accepts these, so the picker was the only stale layer.
     return [
+        { key: 'none', name: 'none' },
+        { key: 'minimal', name: 'minimal' },
         { key: 'low', name: 'low' },
         { key: 'medium', name: 'medium' },
         { key: 'high', name: 'high' },
