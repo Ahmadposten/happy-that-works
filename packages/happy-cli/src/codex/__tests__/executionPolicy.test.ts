@@ -29,11 +29,11 @@ describe('resolveCodexExecutionPolicy', () => {
         });
     });
 
-    it('maps safe-yolo mode to on-failure + workspace-write without managed sandbox', () => {
+    it('maps safe-yolo mode to never + workspace-write without managed sandbox', () => {
         const policy = resolveCodexExecutionPolicy('safe-yolo', false);
 
         expect(policy).toEqual({
-            approvalPolicy: 'on-failure',
+            approvalPolicy: 'never',
             sandbox: 'workspace-write',
         });
     });
