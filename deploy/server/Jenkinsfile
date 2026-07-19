@@ -1,0 +1,133 @@
+pipeline {
+  // Two containers sharing the workspace:
+  //   kaniko — builds Dockerfile.server (the whole monorepo server build runs
+  //            inside the image, so kaniko does it directly from a git context)
+  //   jnlp   — checkout + kubectl (kubectl-capable agent image)
+  //
+  // Unlike the web pipeline (which builds the Expo export in a node container
+  // and lets kaniko package only the static output), the server IS a Docker
+  // build — Dockerfile.server does the pnpm install + tsc itself — so kaniko
+  // owns the whole thing, mirroring the benjamins / quietplan backend flow.
+  agent {
+    kubernetes {
+      yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccountName: jenkins
+  nodeSelector:
+    site: onprem2
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: ci
+      effect: NoSchedule
+  containers:
+    - name: jnlp
+      image: ahmadposten/jenkins-agent-kubectl:latest
+      resources:
+        requests: { cpu: "200m", memory: "512Mi" }
+        limits: { cpu: "1", memory: "1Gi" }
+    - name: kaniko
+      image: gcr.io/kaniko-project/executor:debug
+      command: ["/busybox/cat"]
+      tty: true
+      volumeMounts:
+        - name: dockerhub
+          mountPath: /kaniko/.docker
+      # A full monorepo `pnpm install` inside Dockerfile.server + kaniko's
+      # snapshot OOMs at 8Gi; 28Gi has ample headroom on the 128GiB CI node.
+      resources:
+        requests: { cpu: "4", memory: "10Gi" }
+        limits: { cpu: "16", memory: "28Gi" }
+  volumes:
+    - name: dockerhub
+      secret:
+        secretName: dockerhub-credentials
+'''
+      defaultContainer 'jnlp'
+    }
+  }
+
+  options {
+    timeout(time: 40, unit: 'MINUTES')
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+    disableConcurrentBuilds()
+    skipDefaultCheckout()
+  }
+
+  stages {
+    stage('Checkout') {
+      options { retry(3) }
+      steps {
+        script {
+          // HTTPS clone of the (public) repo — capture GIT_COMMIT for the tag.
+          def scmVars = checkout([$class: 'GitSCM',
+            branches: [[name: '*/main']],
+            userRemoteConfigs: [[url: 'https://github.com/Posten-Lab/happy-that-works.git']]])
+          env.GIT_COMMIT = scmVars.GIT_COMMIT
+        }
+      }
+    }
+
+    stage('Build & Push') {
+      // kaniko builds Dockerfile.server straight from the git context so the
+      // heavy monorepo install/build runs on the beefy CI node, not the agent.
+      options { retry(2) }
+      steps {
+        container('kaniko') {
+          script {
+            def shortSha = env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'unknown'
+            sh """/kaniko/executor \
+              --context=git://github.com/Posten-Lab/happy-that-works.git#refs/heads/main \
+              --dockerfile=Dockerfile.server \
+              --destination=ahmadposten/happy-improved-server:latest \
+              --destination=ahmadposten/happy-improved-server:git-${shortSha} \
+              --cache=true \
+              --cache-repo=ahmadposten/happy-improved-server-cache \
+              --snapshot-mode=redo \
+              --use-new-run"""
+          }
+        }
+      }
+    }
+
+    stage('Deploy') {
+      // Stamp the image tag + build time into the manifests, apply, roll out.
+      // Secrets (happy-server-secret) are created out-of-band — the Jenkins
+      // deployer Role has no Secret access — so they are NOT applied here.
+      options { retry(3) }
+      steps {
+        container('jnlp') {
+          script {
+            def shortSha = env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'unknown'
+            def buildTimeIso = new Date().format("yyyy-MM-dd'T'HH:mm:ssXXX", TimeZone.getTimeZone('UTC'))
+            sh """
+              img=ahmadposten/happy-improved-server:git-${shortSha}
+              f=deploy/server/k8s/deployment.yaml
+              # pin both the runtime + migrate initContainer to the immutable tag
+              sed -i "s|ahmadposten/happy-improved-server:latest|\$img|g" "\$f"
+              sed -i "s|__GIT_SHA__|${shortSha}|g" "\$f"
+              sed -i "s|__BUILD_TIME__|${buildTimeIso}|g" "\$f"
+            """
+          }
+          // Datastores + storage (idempotent; safe to re-apply every deploy).
+          sh 'kubectl apply -f deploy/server/k8s/postgres.yaml -n happy'
+          sh 'kubectl apply -f deploy/server/k8s/redis.yaml -n happy'
+          sh 'kubectl apply -f deploy/server/k8s/minio.yaml -n happy'
+          sh 'kubectl apply -f deploy/server/k8s/minio-setup-job.yaml -n happy || true'
+          // Server.
+          sh 'kubectl apply -f deploy/server/k8s/service.yaml -n happy'
+          sh 'kubectl apply -f deploy/server/k8s/deployment.yaml -n happy'
+          sh 'kubectl rollout status deployment/happy-server -n happy --timeout=300s'
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      sh 'chmod -R u+w "$WORKSPACE" 2>/dev/null; rm -rf "$WORKSPACE"/* "$WORKSPACE"/.[!.]* 2>/dev/null; true'
+    }
+  }
+}

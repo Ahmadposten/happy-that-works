@@ -1,0 +1,82 @@
+# In-cluster Redis for happy-server (namespace `happy`).
+#
+# happy-server uses Redis for the socket.io pub/sub adapter + eventbus so that
+# multiple server replicas stay in sync (main.ts / storage/redis.ts guard on
+# REDIS_URL). Single instance, AOF-persisted on a local-path PVC. Reached via
+# ClusterIP Service `happy-redis:6379`.
+apiVersion: v1
+kind: Service
+metadata:
+  name: happy-redis
+  namespace: happy
+  labels:
+    app: happy-redis
+spec:
+  selector:
+    app: happy-redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: happy-redis-data
+  namespace: happy
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: happy-redis
+  namespace: happy
+  labels:
+    app: happy-redis
+spec:
+  replicas: 1
+  # Recreate: a local-path PVC is bound to one node; never run two pods on it.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: happy-redis
+  template:
+    metadata:
+      labels:
+        app: happy-redis
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: server-guru-eu
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["redis-server", "--appendonly", "yes"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: { cpu: "20m", memory: "64Mi" }
+            limits: { cpu: "500m", memory: "512Mi" }
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: happy-redis-data
