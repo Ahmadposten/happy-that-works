@@ -35,11 +35,12 @@ spec:
       volumeMounts:
         - name: dockerhub
           mountPath: /kaniko/.docker
-      # A full monorepo `pnpm install` inside Dockerfile.server + kaniko's
-      # snapshot OOMs at 8Gi; 28Gi has ample headroom on the 128GiB CI node.
+      # The CI node is 144 cores / 128GiB. Give kaniko real muscle so the
+      # monorepo install + tsc + single snapshot fly. (Full install OOMs at
+      # 8Gi; 32Gi is ample.)
       resources:
-        requests: { cpu: "4", memory: "10Gi" }
-        limits: { cpu: "16", memory: "28Gi" }
+        requests: { cpu: "16", memory: "12Gi" }
+        limits: { cpu: "48", memory: "32Gi" }
   volumes:
     - name: dockerhub
       secret:
@@ -78,6 +79,12 @@ spec:
         container('kaniko') {
           script {
             def shortSha = env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'unknown'
+            // --single-snapshot: take ONE filesystem snapshot at the end
+            // instead of after every layer. The per-layer snapshot of the
+            // ~2GB monorepo node_modules is what made this build take ~17 min;
+            // one snapshot brings it to a few minutes. (--use-new-run was
+            // removed — it exit-127'd on this Dockerfile.) --cache still
+            // short-circuits the apt + pnpm-install layers on rebuilds.
             sh """/kaniko/executor \
               --context=git://github.com/Posten-Lab/happy-that-works.git#refs/heads/main \
               --dockerfile=Dockerfile.server \
@@ -85,8 +92,8 @@ spec:
               --destination=ahmadposten/happy-improved-server:git-${shortSha} \
               --cache=true \
               --cache-repo=ahmadposten/happy-improved-server-cache \
-              --snapshot-mode=redo \
-              --use-new-run"""
+              --single-snapshot \
+              --compressed-caching=false"""
           }
         }
       }
