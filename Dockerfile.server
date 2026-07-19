@@ -24,16 +24,7 @@ COPY packages/happy-server/prisma packages/happy-server/prisma
 COPY packages/happy-cli/scripts packages/happy-cli/scripts
 COPY packages/happy-cli/tools packages/happy-cli/tools
 
-# Install ONLY the server subgraph (happy-server-self-host + its workspace dep
-# @slopus/happy-wire), not the whole monorepo. A full install pulls the entire
-# happy-app graph (expo / react-native / ~2400 pkgs) the server never uses —
-# a ~2GB node_modules that kaniko then spends minutes snapshotting/extracting
-# every build. Both packages are selected with their full dep+devDep trees so
-# happy-wire can build (shx/pkgroll) and happy-wire is linked for the server.
-# --frozen-lockfile still validates against the full lockfile (all package.json
-# manifests are copied above).
-RUN SKIP_HAPPY_WIRE_BUILD=1 pnpm install --frozen-lockfile \
-      --filter happy-server-self-host... --filter @slopus/happy-wire...
+RUN SKIP_HAPPY_WIRE_BUILD=1 pnpm install --frozen-lockfile
 
 # Stage 2: build the server
 FROM deps AS builder
@@ -42,13 +33,7 @@ COPY packages/happy-wire ./packages/happy-wire
 COPY packages/happy-server ./packages/happy-server
 
 RUN pnpm --filter @slopus/happy-wire build
-# NOTE: no `pnpm --filter happy-server-self-host build` here.
-# The runtime CMD is `tsx ./sources/main.ts` (runs from sources, never
-# dist/), so the server needs no compile step. That script also ran
-# `tsc --noEmit` over test files — one .spec.ts imports happy-app, which
-# the server-subgraph install deliberately omits — and bundled
-# standalone.ts with `bun`, absent here. Typecheck stays a CI concern
-# (full-monorepo test job), not a production image build step.
+RUN pnpm --filter happy-server build
 
 # Stage 3: runtime
 FROM node:20 AS runner
@@ -72,4 +57,4 @@ EXPOSE 3000
 
 # Command to run the application
 COPY --from=builder /repo/package.json /repo/pnpm-workspace.yaml /repo/
-CMD ["pnpm", "--filter", "happy-server-self-host", "start"]
+CMD ["pnpm", "--filter", "happy-server", "start"]
