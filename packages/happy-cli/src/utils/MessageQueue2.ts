@@ -1,6 +1,12 @@
 import { logger } from "@/ui/logger";
 
-export type PendingAttachment = { data: Uint8Array; mimeType: string; name: string };
+/**
+ * An attachment carried alongside a queued message. `ref` is the server-side
+ * blob reference — the router downstream reports back per-ref accept/reject
+ * status via the `file-status` wire event so the app composer can red-mark
+ * a failed chip instead of silently dropping it.
+ */
+export type PendingAttachment = { ref: string; data: Uint8Array; mimeType: string; name: string };
 
 interface QueueItem<T> {
     message: string;

@@ -537,9 +537,11 @@ class Sync {
                     ref,
                     name: attachment.name,
                     size: attachment.size,
+                    mimeType: attachment.mimeType,
                     width: attachment.width,
                     height: attachment.height,
                     thumbhash: attachment.thumbhash,
+                    localId: attachment.id,
                 });
             } catch (err) {
                 const diagnostic = getAttachmentDiagnostic(err);
@@ -632,6 +634,14 @@ class Sync {
                 }
 
                 for (const att of uploaded) {
+                    // MIME determines routing on the CLI: images go inline as
+                    // content blocks, PDFs as document blocks, everything else
+                    // via a `@<temp-path>` reference. mimeType is now required
+                    // on the wire (was optional in the image-only era) —
+                    // required in emitters, still tolerated as optional in
+                    // parsers so pre-migration records don't blow up.
+                    const isImage = att.mimeType.startsWith('image/');
+                    const isVideo = att.mimeType.startsWith('video/');
                     const fileRecord: RawRecord = {
                         role: 'session',
                         content: {
@@ -645,18 +655,25 @@ class Sync {
                                     ref: att.ref,
                                     name: att.name,
                                     size: att.size,
-                                    // Include image metadata when we have dimensions; thumbhash is
-                                    // optional. The native iOS picker can't generate a thumbhash
-                                    // without Canvas, so requiring it here would reduce the chat
-                                    // bubble to a compact filename row instead of an inline picture.
-                                    // FileView only needs w/h to size the inline render — placeholder
-                                    // is absent, but the real image is decrypted on mount.
-                                    ...(att.width > 0 && att.height > 0
+                                    mimeType: att.mimeType,
+                                    // Populate `image` only for actual image
+                                    // MIMEs. Native iOS picker skips thumbhash
+                                    // because it has no Canvas — that's fine,
+                                    // FileView just skips the placeholder.
+                                    ...(isImage && att.width > 0 && att.height > 0
                                         ? {
                                             image: {
                                                 width: att.width,
                                                 height: att.height,
                                                 ...(att.thumbhash ? { thumbhash: att.thumbhash } : {}),
+                                            },
+                                        }
+                                        : {}),
+                                    ...(isVideo && att.width > 0 && att.height > 0
+                                        ? {
+                                            video: {
+                                                width: att.width,
+                                                height: att.height,
                                             },
                                         }
                                         : {}),

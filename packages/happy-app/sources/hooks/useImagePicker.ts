@@ -19,7 +19,13 @@ import { t } from '@/text';
 import type { AttachmentPreview } from '@/sync/attachmentTypes';
 
 export const MAX_IMAGES_PER_MESSAGE = 20;
-export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+/**
+ * 100 MB matches the server's Fastify bodyLimit and the CLI-side axios
+ * maxBodyLength. Photos are almost never anywhere near this — the ceiling
+ * is here so a picked video from Photos doesn't get rejected client-side
+ * before we even try to upload.
+ */
+export const MAX_FILE_SIZE = 100 * 1024 * 1024;
 const IOS_ATTACHMENT_JPEG_QUALITY = 0.92;
 
 export type { AttachmentPreview };
@@ -40,20 +46,33 @@ function withJpegExtension(fileName: string | null | undefined): string {
     return `${stem}.jpg`;
 }
 
+function assetIsVideo(asset: ImagePicker.ImagePickerAsset): boolean {
+    if ((asset as { type?: string }).type === 'video') return true;
+    if (asset.mimeType?.startsWith('video/')) return true;
+    return false;
+}
+
 export async function normalizePickedAssetForUpload(asset: ImagePicker.ImagePickerAsset): Promise<{
     uri: string;
     width: number;
     height: number;
     mimeType: string;
     name: string;
+    isVideo: boolean;
 }> {
-    if (Platform.OS !== 'ios') {
+    const isVideo = assetIsVideo(asset);
+
+    // Videos + everything on non-iOS platforms pass through untouched. We
+    // never transcode video client-side — the CLI's `@path` route hands the
+    // bytes to Claude Read/Bash tools, which are format-agnostic.
+    if (isVideo || Platform.OS !== 'ios') {
         return {
             uri: asset.uri,
             width: asset.width,
             height: asset.height,
-            mimeType: asset.mimeType ?? 'image/jpeg',
-            name: asset.fileName ?? `image_${Date.now()}.jpg`,
+            mimeType: asset.mimeType ?? (isVideo ? 'video/mp4' : 'image/jpeg'),
+            name: asset.fileName ?? (isVideo ? `video_${Date.now()}.mp4` : `image_${Date.now()}.jpg`),
+            isVideo,
         };
     }
 
@@ -68,6 +87,7 @@ export async function normalizePickedAssetForUpload(asset: ImagePicker.ImagePick
         height: converted.height || asset.height,
         mimeType: 'image/jpeg',
         name: withJpegExtension(asset.fileName),
+        isVideo: false,
     };
 }
 
@@ -109,7 +129,11 @@ export function useImagePicker(): UseImagePickerResult {
         }
 
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'], // expo-image-picker ~55: MediaTypeOptions deprecated
+            // Videos are routed through the CLI router as `@<path>` refs; the
+            // Anthropic API has no video content block, but Claude's Read/Bash
+            // tools happily act on the temp file. Users expect video pickup to
+            // work identically to photos.
+            mediaTypes: ['images', 'videos'],
             allowsMultipleSelection: true,
             selectionLimit: remaining,
             quality: 1, // request full-resolution source; iOS upload is normalized below
@@ -128,7 +152,7 @@ export function useImagePicker(): UseImagePickerResult {
             if (size > MAX_FILE_SIZE) {
                 Modal.alert(
                     t('imageUpload.fileTooLargeTitle'),
-                    t('imageUpload.fileTooLargeMessage', { name: asset.fileName ?? 'image', maxMb: 10 }),
+                    t('imageUpload.fileTooLargeMessage', { name: asset.fileName ?? 'image', maxMb: 100 }),
                     [{ text: t('common.ok') }],
                 );
                 continue;
@@ -136,8 +160,10 @@ export function useImagePicker(): UseImagePickerResult {
 
             const normalized = await normalizePickedAssetForUpload(asset);
 
-            // Skip thumbhash if dimensions are unavailable (prevents divide-by-zero).
-            const thumbhash = (normalized.width > 0 && normalized.height > 0)
+            // Skip thumbhash for videos and for anything without valid dims —
+            // generateThumbhash reads pixels off a Canvas, which requires an
+            // image, and divides by (width * height) which cannot be zero.
+            const thumbhash = (!normalized.isVideo && normalized.width > 0 && normalized.height > 0)
                 ? await generateThumbhash(normalized.uri, normalized.width, normalized.height)
                 : undefined;
 
@@ -150,6 +176,8 @@ export function useImagePicker(): UseImagePickerResult {
                 size,
                 name: normalized.name,
                 thumbhash,
+                isFile: normalized.isVideo, // videos render as file chips, not thumbnails
+                status: 'pending',
             });
         }
 

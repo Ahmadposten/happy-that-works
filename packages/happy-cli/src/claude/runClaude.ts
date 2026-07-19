@@ -614,20 +614,24 @@ export async function runClaude(credentials: Credentials, options: StartOptions 
     // attachment (or null). drainAttachmentsForUserMessage on the next text
     // claims the in-flight set atomically; later file events go into a fresh
     // bucket bound to the next message — no shared push-array between batches.
+    // On failure we emit a `file-status` back to the app so the composer
+    // chip flips red with a specific reason instead of silently dropping.
     session.onFileEvent((fileEvent) => {
         const ev = fileEvent.content.data.ev;
         logger.debug(`[loop] File event received: ${ev.name} (${ev.size} bytes, ref: ${ev.ref})`);
-        const downloadPromise = (async (): Promise<{ data: Uint8Array; mimeType: string; name: string } | null> => {
+        const downloadPromise = (async (): Promise<{ ref: string; data: Uint8Array; mimeType: string; name: string } | null> => {
             try {
                 const decrypted = await session.downloadAndDecryptAttachment(ev.ref);
                 if (!decrypted) {
                     logger.debug(`[loop] Failed to decrypt attachment: ${ev.name}`);
+                    session.sendFileStatus(ev.ref, 'rejected', 'decrypt_failed');
                     return null;
                 }
                 logger.debug(`[loop] Attachment decrypted: ${ev.name} (${decrypted.length} bytes)`);
-                return { data: decrypted, mimeType: ev.mimeType ?? 'image/jpeg', name: ev.name };
+                return { ref: ev.ref, data: decrypted, mimeType: ev.mimeType ?? 'application/octet-stream', name: ev.name };
             } catch (error) {
                 logger.debug(`[loop] Failed to download attachment: ${ev.name}`, { error });
+                session.sendFileStatus(ev.ref, 'rejected', 'download_failed');
                 return null;
             }
         })();

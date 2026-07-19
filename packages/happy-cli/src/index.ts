@@ -34,6 +34,7 @@ import { extractNoSandboxFlag } from './utils/sandboxFlags'
 import { handleResumeCommand } from '@/resume/handleResumeCommand'
 import { ensureDaemonRunning } from './daemon/ensureDaemonRunning'
 import { handleCodexCommand } from './commands/codexCommand'
+import { sweepAttachmentsDir } from '@/claude/utils/attachmentRouter'
 
 
 (async () => {
@@ -43,6 +44,11 @@ import { handleCodexCommand } from './commands/codexCommand'
   if (!args.includes('--version')) {
     logger.debug('Starting happy CLI with args: ', process.argv)
   }
+
+  // Reap decrypted-attachment temp dirs left behind by a prior CLI process
+  // that crashed before its per-session cleanup could run. TTL 24h. Fire-
+  // and-forget so we never block startup.
+  sweepAttachmentsDir().catch(() => { /* best effort */ })
 
   // Check if first argument is a subcommand
   const subcommand = args[0]

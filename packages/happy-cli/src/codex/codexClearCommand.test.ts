@@ -24,6 +24,7 @@ describe('enqueueCodexUserText', () => {
     it('passes attachments to normal queued messages', () => {
         const mode = { permissionMode: 'default' as const };
         const attachments = [{
+            ref: 'ref-screen',
             data: new Uint8Array([1, 2, 3]),
             mimeType: 'image/png',
             name: 'screen.png',
@@ -48,6 +49,7 @@ describe('enqueueCodexUserText', () => {
     it('passes attachments to isolated clear messages', () => {
         const mode = { permissionMode: 'default' as const };
         const attachments = [{
+            ref: 'ref-photo',
             data: new Uint8Array([4, 5, 6]),
             mimeType: 'image/jpeg',
             name: 'photo.jpg',
