@@ -68,6 +68,32 @@ describe('normalizePickedAssetForUpload', () => {
             name: 'IMG_9824.jpg',
             width: 4032,
             height: 3024,
+            isVideo: false,
+        });
+    });
+
+    it('passes through video assets without invoking image manipulation', async () => {
+        mocks.platform.OS = 'ios';
+
+        const normalized = await normalizePickedAssetForUpload({
+            uri: 'file:///tmp/PL_0001.MOV',
+            width: 1920,
+            height: 1080,
+            fileName: 'PL_0001.MOV',
+            fileSize: 12_345_678,
+            mimeType: 'video/quicktime',
+            // expo-image-picker uses `type: 'video'` alongside mimeType.
+            type: 'video',
+        } as any);
+
+        expect(mocks.manipulateAsync).not.toHaveBeenCalled();
+        expect(normalized).toEqual({
+            uri: 'file:///tmp/PL_0001.MOV',
+            mimeType: 'video/quicktime',
+            name: 'PL_0001.MOV',
+            width: 1920,
+            height: 1080,
+            isVideo: true,
         });
     });
 });

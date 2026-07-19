@@ -232,7 +232,10 @@ export type UserMessage = z.infer<typeof UserMessageSchema>
 
 /**
  * File event message — sent by the app as a session envelope before the text message.
- * Contains a ref pointing to the encrypted blob on the server.
+ * Contains a ref pointing to the encrypted blob on the server. The router in
+ * `claude/utils/attachmentRouter.ts` dispatches each ref to an image block, a
+ * document block, or a temp-file `@path` reference based on magic-byte sniff,
+ * `mimeType`, or filename extension — in that priority order.
  */
 export const FileEventMessageSchema = z.object({
   role: z.literal('session'),
@@ -257,12 +260,54 @@ export const FileEventMessageSchema = z.object({
           // attachment never reaches Claude.
           thumbhash: z.string().optional(),
         }).optional(),
+        video: z.object({
+          width: z.number(),
+          height: z.number(),
+          durationMs: z.number().optional(),
+          thumbhash: z.string().optional(),
+        }).optional(),
       }),
     }),
   }),
 })
 
 export type FileEventMessage = z.infer<typeof FileEventMessageSchema>
+
+/**
+ * File status event — emitted BY the CLI back to the app after routing an
+ * attachment. Lets the composer red-mark a rejected chip with a specific
+ * reason instead of the old silent drop.
+ */
+export const fileStatusReasonSchema = z.enum([
+  'download_failed',
+  'decrypt_failed',
+  'empty_bytes',
+  'image_too_large',
+  'document_too_large',
+  'tempfile_write_failed',
+  'unsupported',
+])
+export type FileStatusReason = z.infer<typeof fileStatusReasonSchema>
+
+export const FileStatusEventSchema = z.object({
+  role: z.literal('session'),
+  content: z.object({
+    type: z.literal('session'),
+    data: z.object({
+      id: z.string(),
+      time: z.number(),
+      role: z.literal('agent'),
+      ev: z.object({
+        t: z.literal('file-status'),
+        ref: z.string(),
+        status: z.enum(['accepted', 'rejected']),
+        reason: fileStatusReasonSchema.optional(),
+      }),
+    }),
+  }),
+})
+
+export type FileStatusEvent = z.infer<typeof FileStatusEventSchema>
 
 export const AgentMessageSchema = z.object({
   role: z.literal('agent'),

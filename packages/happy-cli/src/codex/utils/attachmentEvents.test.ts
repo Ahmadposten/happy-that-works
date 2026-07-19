@@ -33,9 +33,11 @@ describe('downloadCodexFileEventAttachment', () => {
         const data = new Uint8Array([1, 2, 3]);
         const session = {
             downloadAndDecryptAttachment: vi.fn().mockResolvedValue(data),
+            sendFileStatus: vi.fn(),
         };
 
         await expect(downloadCodexFileEventAttachment(session, fileEvent())).resolves.toEqual({
+            ref: 'attachment-ref',
             data,
             mimeType: 'image/png',
             name: 'image.png',
@@ -43,15 +45,17 @@ describe('downloadCodexFileEventAttachment', () => {
         expect(session.downloadAndDecryptAttachment).toHaveBeenCalledWith('attachment-ref');
     });
 
-    it('defaults missing MIME type to image/jpeg', async () => {
+    it('defaults missing MIME type to application/octet-stream', async () => {
         const data = new Uint8Array([1, 2, 3]);
         const session = {
             downloadAndDecryptAttachment: vi.fn().mockResolvedValue(data),
+            sendFileStatus: vi.fn(),
         };
 
         await expect(downloadCodexFileEventAttachment(session, fileEvent({ mimeType: null }))).resolves.toEqual({
+            ref: 'attachment-ref',
             data,
-            mimeType: 'image/jpeg',
+            mimeType: 'application/octet-stream',
             name: 'image.png',
         });
     });
@@ -65,6 +69,7 @@ describe('downloadCodexFileEventAttachment', () => {
         });
         const session = {
             downloadAndDecryptAttachment: vi.fn().mockRejectedValue(sensitiveError),
+            sendFileStatus: vi.fn(),
         };
 
         await expect(downloadCodexFileEventAttachment(session, fileEvent())).resolves.toBeNull();
@@ -77,6 +82,7 @@ describe('downloadCodexFileEventAttachment', () => {
         const sensitiveName = 'https://example.test/image.png?token=secret';
         const session = {
             downloadAndDecryptAttachment: vi.fn().mockResolvedValue(null),
+            sendFileStatus: vi.fn(),
         };
 
         await expect(downloadCodexFileEventAttachment(session, fileEvent({ name: sensitiveName }))).resolves.toBeNull();

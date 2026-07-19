@@ -431,6 +431,7 @@ describe('MessageQueue2', () => {
         const queue = new MessageQueue2<{ type: string }>((mode) => mode.type);
         const attachments = [
             {
+                ref: 'ref-shot',
                 data: new Uint8Array([1, 2, 3]),
                 mimeType: 'image/png',
                 name: 'screenshot.png',

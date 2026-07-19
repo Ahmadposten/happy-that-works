@@ -86,9 +86,11 @@ interface AgentInputProps {
     isSending?: boolean;
     minHeight?: number;
     zenMode?: boolean;
-    /** Image attachments waiting to be sent (expImageUpload feature). */
+    /** Attachments waiting to be sent (images, videos, docs, any file). */
     selectedImages?: AttachmentPreview[];
     onPickImages?: () => void;
+    /** Optional file/document picker — separate from photos-library. */
+    onPickDocuments?: () => void;
     onRemoveImage?: (id: string) => void;
     onAddImages?: (images: AttachmentPreview[]) => void;
 }
@@ -1323,7 +1325,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                 {/* Git Status Badge */}
                                 <GitStatusButton sessionId={props.sessionId} onPress={props.onFileViewerPress} />
 
-                                {/* Image picker button (expImageUpload) */}
+                                {/* Photos / Videos picker (photo library). */}
                                 {props.onPickImages && (
                                     <Pressable
                                         onPress={props.onPickImages}
@@ -1345,6 +1347,29 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                             color={(props.selectedImages?.length ?? 0) > 0
                                                 ? theme.colors.radio.active
                                                 : theme.colors.button.secondary.tint}
+                                        />
+                                    </Pressable>
+                                )}
+                                {/* Documents / arbitrary files picker (Files.app). */}
+                                {props.onPickDocuments && (
+                                    <Pressable
+                                        onPress={props.onPickDocuments}
+                                        hitSlop={{ top: 5, bottom: 10, left: 0, right: 0 }}
+                                        style={(p) => ({
+                                            flexDirection: 'row',
+                                            alignItems: 'center',
+                                            borderRadius: Platform.select({ default: 16, android: 20 }),
+                                            paddingHorizontal: 8,
+                                            paddingVertical: 6,
+                                            justifyContent: 'center',
+                                            height: 32,
+                                            opacity: p.pressed ? 0.7 : 1,
+                                        })}
+                                    >
+                                        <Ionicons
+                                            name="document-attach-outline"
+                                            size={16}
+                                            color={theme.colors.button.secondary.tint}
                                         />
                                     </Pressable>
                                 )}

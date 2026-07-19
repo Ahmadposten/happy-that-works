@@ -1,7 +1,7 @@
 import { logger } from '@/ui/logger'
 import { EventEmitter } from 'node:events'
 import { io, Socket } from 'socket.io-client'
-import { AgentState, ClientToServerEvents, FileEventMessage, FileEventMessageSchema, Metadata, ServerToClientEvents, Session, Update, UserMessage, UserMessageSchema, Usage } from './types'
+import { AgentState, ClientToServerEvents, FileEventMessage, FileEventMessageSchema, FileStatusReason, Metadata, ServerToClientEvents, Session, Update, UserMessage, UserMessageSchema, Usage } from './types'
 import { decodeBase64, decryptBlob, decrypt, encodeBase64, encrypt, encryptBlob } from './encryption';
 import { backoff, delay } from '@/utils/time';
 import { configuration } from '@/configuration';
@@ -204,7 +204,7 @@ export class ApiSessionClient extends EventEmitter {
      * null on failure), so per-message ownership is intrinsic — there is no
      * shared push-array between batches that a late download could leak into.
      */
-    private pendingDownloads: Promise<{ data: Uint8Array; mimeType: string; name: string } | null>[] = [];
+    private pendingDownloads: Promise<{ ref: string; data: Uint8Array; mimeType: string; name: string } | null>[] = [];
     readonly rpcHandlerManager: RpcHandlerManager;
     private agentStateLock = new AsyncLock();
     private metadataLock = new AsyncLock();
@@ -432,7 +432,7 @@ export class ApiSessionClient extends EventEmitter {
                     'Content-Type': `multipart/form-data; boundary=${boundary}`,
                 },
                 timeout: 60000,
-                maxBodyLength: 10 * 1024 * 1024,
+                maxBodyLength: 100 * 1024 * 1024,
             });
             return;
         }
@@ -523,7 +523,7 @@ export class ApiSessionClient extends EventEmitter {
      * events that arrive after the swap go into a fresh bucket bound to the
      * next user-text message.
      */
-    trackAttachmentDownload(promise: Promise<{ data: Uint8Array; mimeType: string; name: string } | null>): void {
+    trackAttachmentDownload(promise: Promise<{ ref: string; data: Uint8Array; mimeType: string; name: string } | null>): void {
         this.pendingDownloads.push(promise);
     }
 
@@ -532,12 +532,12 @@ export class ApiSessionClient extends EventEmitter {
      * to resolve, and return the successful ones. The swap-then-await order
      * guarantees that a late-arriving file event cannot leak into this batch.
      */
-    async drainAttachmentsForUserMessage(): Promise<Array<{ data: Uint8Array; mimeType: string; name: string }>> {
+    async drainAttachmentsForUserMessage(): Promise<Array<{ ref: string; data: Uint8Array; mimeType: string; name: string }>> {
         const downloads = this.pendingDownloads;
         this.pendingDownloads = [];
         if (downloads.length === 0) return [];
         const results = await Promise.all(downloads);
-        return results.filter((x): x is { data: Uint8Array; mimeType: string; name: string } => x !== null);
+        return results.filter((x): x is { ref: string; data: Uint8Array; mimeType: string; name: string } => x !== null);
     }
 
     private authHeaders() {
@@ -845,6 +845,33 @@ export class ApiSessionClient extends EventEmitter {
                 type: 'event',
                 data: event
             }
+        };
+        this.enqueueMessage(content);
+    }
+
+    /**
+     * Emit a file-status back-channel event for an attachment. The app matches
+     * on `ref` and updates the composer chip (green accepted / red rejected +
+     * reason). Mirrors the FileEventMessage envelope shape so the same
+     * decrypt path on the app parses it uniformly.
+     */
+    sendFileStatus(ref: string, status: 'accepted' | 'rejected', reason?: FileStatusReason) {
+        const content = {
+            role: 'session',
+            content: {
+                type: 'session',
+                data: {
+                    id: randomUUID(),
+                    time: Date.now(),
+                    role: 'agent',
+                    ev: {
+                        t: 'file-status',
+                        ref,
+                        status,
+                        ...(reason ? { reason } : {}),
+                    },
+                },
+            },
         };
         this.enqueueMessage(content);
     }

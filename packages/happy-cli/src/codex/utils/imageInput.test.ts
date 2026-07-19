@@ -70,6 +70,7 @@ describe('prepareCodexImageInputItems', () => {
         const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 
         const result = await prepareCodexImageInputItems([{
+            ref: 'ref-heic',
             data: pngBytes,
             mimeType: 'image/heic',
             name: '../../original name.heic',
@@ -94,6 +95,7 @@ describe('prepareCodexImageInputItems', () => {
         const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
         const result = await prepareCodexImageInputItems([{
+            ref: 'ref-png',
             data: pngBytes,
             mimeType: 'image/png',
             name: 'image.png',
@@ -116,6 +118,7 @@ describe('prepareCodexImageInputItems', () => {
         const sensitiveName = 'https://upload.example.test/presigned?token=secret';
 
         const result = await prepareCodexImageInputItems([{
+            ref: 'ref-notimg',
             data: new TextEncoder().encode('not an image'),
             mimeType: 'image/png',
             name: sensitiveName,
@@ -138,6 +141,7 @@ describe('prepareCodexImageInputItems', () => {
         const sensitiveName = 'data:image/png;base64,secret';
 
         const result = await prepareCodexImageInputItems([{
+            ref: 'ref-jpeg',
             data: new Uint8Array([0xff, 0xd8, 0xff, 0xdb]),
             mimeType: 'image/jpeg',
             name: sensitiveName,
