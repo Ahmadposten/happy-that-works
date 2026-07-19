@@ -74,6 +74,7 @@ export default {
             infoPlist: {
                 NSMicrophoneUsageDescription: "Allow $(PRODUCT_NAME) to access your microphone for voice conversations with AI.",
                 NSLocalNetworkUsageDescription: "Allow $(PRODUCT_NAME) to find and connect to local devices on your network.",
+                NSPhotoLibraryUsageDescription: "Allow $(PRODUCT_NAME) to attach photos and videos from your library to chat with Claude.",
                 NSBonjourServices: ["_http._tcp", "_https._tcp"],
                 // ATS:
                 // - NSAllowsLocalNetworking: lets HTTP fetches reach LAN

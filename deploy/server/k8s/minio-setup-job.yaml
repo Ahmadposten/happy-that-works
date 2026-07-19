@@ -1,0 +1,49 @@
+# One-shot Job that creates the `happy` bucket in MinIO. happy-server's
+# loadFiles() calls bucketExists() at boot and will fail if the bucket is
+# missing — so this must run (and succeed) before the server starts.
+#
+# Idempotent: `mc mb --ignore-existing` is a no-op if the bucket already exists,
+# so re-running the Job (or re-applying on every deploy) is safe.
+#
+# Attachments are private — served only via short-lived presigned URLs — so we
+# deliberately do NOT make the bucket public/anonymous.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: happy-minio-setup
+  namespace: happy
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: happy-minio-setup
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: minio/mc:latest
+          env:
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: happy-server-secret
+                  key: S3_ACCESS_KEY
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: happy-server-secret
+                  key: S3_SECRET_KEY
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "waiting for MinIO..."
+              until mc alias set happy http://happy-minio:9000 "$S3_ACCESS_KEY" "$S3_SECRET_KEY" 2>/dev/null; do
+                sleep 3
+              done
+              mc mb --ignore-existing happy/happy
+              echo "bucket ready: happy/happy"
+              mc ls happy/

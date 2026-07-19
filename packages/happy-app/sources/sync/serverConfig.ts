@@ -5,7 +5,10 @@ const serverConfigStorage = new MMKV({ id: 'server-config' });
 
 const SERVER_KEY = 'custom-server-url';
 const LOG_SERVER_KEY = 'log-server-url';
-const DEFAULT_SERVER_URL = 'https://api.cluster-fluster.com';
+// Self-hosted Happy relay (deploy/server + api.happy.ahposten.com edge).
+// Overridable at runtime via the in-app custom server field, the injected
+// __HAPPY_CONFIG__ (webapp), or EXPO_PUBLIC_HAPPY_SERVER_URL at build time.
+const DEFAULT_SERVER_URL = 'https://api.happy.ahposten.com';
 
 export function getServerUrl(): string {
     return serverConfigStorage.getString(SERVER_KEY) ||

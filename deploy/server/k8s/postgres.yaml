@@ -1,0 +1,91 @@
+# In-cluster Postgres for happy-server (namespace `happy`).
+#
+# Single-primary StatefulSet on the cluster-default `local-path` storage class
+# (node-local PVC), mirroring the benjamins/quietplan in-cluster datastore
+# pattern. happy-server connects via the headless Service `happy-postgres:5432`.
+#
+# The DB password comes from Secret `happy-server-secret` (key POSTGRES_PASSWORD),
+# created out-of-band (see secret.example.yaml) — the Jenkins deployer Role has
+# no access to Secrets, so this is bootstrap-only.
+apiVersion: v1
+kind: Service
+metadata:
+  name: happy-postgres
+  namespace: happy
+  labels:
+    app: happy-postgres
+spec:
+  clusterIP: None
+  selector:
+    app: happy-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: happy-postgres
+  namespace: happy
+  labels:
+    app: happy-postgres
+spec:
+  serviceName: happy-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: happy-postgres
+  template:
+    metadata:
+      labels:
+        app: happy-postgres
+    spec:
+      # Keep the DB on a stable node so its node-local PVC always binds back.
+      # server-guru-eu is a public control-plane node that is always up.
+      nodeSelector:
+        kubernetes.io/hostname: server-guru-eu
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: happy
+            - name: POSTGRES_USER
+              value: happy
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: happy-server-secret
+                  key: POSTGRES_PASSWORD
+            # PGDATA in a subdir so the PVC root (with lost+found) isn't PGDATA.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U happy -d happy"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U happy -d happy"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits: { cpu: "2", memory: "2Gi" }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 10Gi

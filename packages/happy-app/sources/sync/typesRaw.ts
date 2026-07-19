@@ -61,6 +61,9 @@ const sessionFileEventSchema = z.object({
     ref: z.string(),
     name: z.string(),
     size: z.number(),
+    // Optional in the parser for back-compat with legacy image-only events
+    // that never carried a mimeType. New emitters MUST always set this.
+    mimeType: z.string().optional(),
     image: z.object({
         width: z.number(),
         height: z.number(),
@@ -69,6 +72,30 @@ const sessionFileEventSchema = z.object({
         // is decrypted on render anyway.
         thumbhash: z.string().optional(),
     }).optional(),
+    video: z.object({
+        width: z.number(),
+        height: z.number(),
+        durationMs: z.number().optional(),
+        thumbhash: z.string().optional(),
+    }).optional(),
+});
+
+// Status event emitted by the CLI after it routes an attachment. The composer
+// uses this to red-mark a rejected chip with a specific reason. Ref matches
+// the ref on the original 'file' event so the app can pair them.
+const sessionFileStatusEventSchema = z.object({
+    t: z.literal('file-status'),
+    ref: z.string(),
+    status: z.enum(['accepted', 'rejected']),
+    reason: z.enum([
+        'download_failed',
+        'decrypt_failed',
+        'empty_bytes',
+        'image_too_large',
+        'document_too_large',
+        'tempfile_write_failed',
+        'unsupported',
+    ]).optional(),
 });
 
 const sessionTurnStartEventSchema = z.object({
@@ -95,6 +122,7 @@ const sessionEventSchema = z.discriminatedUnion('t', [
     sessionToolCallStartEventSchema,
     sessionToolCallEndEventSchema,
     sessionFileEventSchema,
+    sessionFileStatusEventSchema,
     sessionTurnStartEventSchema,
     sessionStartEventSchema,
     sessionTurnEndEventSchema,
@@ -689,6 +717,17 @@ function normalizeSessionEnvelope(
                 }
             }
             : {};
+        const maybeVideoMetadata = envelope.ev.video
+            ? {
+                video: {
+                    width: envelope.ev.video.width,
+                    height: envelope.ev.video.height,
+                    durationMs: envelope.ev.video.durationMs,
+                    thumbhash: envelope.ev.video.thumbhash,
+                }
+            }
+            : {};
+        const maybeMime = envelope.ev.mimeType ? { mimeType: envelope.ev.mimeType } : {};
 
         // File events carry no separate "completed" wire signal — the upload
         // is already finished by the time the event is sent. Emit the
@@ -711,11 +750,15 @@ function normalizeSessionEnvelope(
                         ref: envelope.ev.ref,
                         name: envelope.ev.name,
                         size: envelope.ev.size,
-                        ...maybeImageMetadata
+                        ...maybeMime,
+                        ...maybeImageMetadata,
+                        ...maybeVideoMetadata,
                     },
                     description: envelope.ev.image
                         ? `Attached image: ${envelope.ev.name} (${envelope.ev.image.width}x${envelope.ev.image.height})`
-                        : `Attached file: ${envelope.ev.name}`,
+                        : envelope.ev.video
+                            ? `Attached video: ${envelope.ev.name}`
+                            : `Attached file: ${envelope.ev.name}`,
                     uuid: contentUUID,
                     parentUUID
                 },
@@ -730,6 +773,14 @@ function normalizeSessionEnvelope(
             ],
             meta
         } satisfies NormalizedMessage;
+    }
+
+    // File-status events are back-channel signals from the CLI to update the
+    // composer chip state. They don't belong in the chat transcript — return
+    // null so the reducer skips them. Composer chip status is currently reset
+    // on send; a persistent per-message chip status is a follow-up.
+    if (envelope.ev.t === 'file-status') {
+        return null;
     }
 
     return null;
