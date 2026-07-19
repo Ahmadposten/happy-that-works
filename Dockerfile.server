@@ -42,7 +42,13 @@ COPY packages/happy-wire ./packages/happy-wire
 COPY packages/happy-server ./packages/happy-server
 
 RUN pnpm --filter @slopus/happy-wire build
-RUN pnpm --filter happy-server-self-host build
+# NOTE: no `pnpm --filter happy-server-self-host build` here.
+# The runtime CMD is `tsx ./sources/main.ts` (runs from sources, never
+# dist/), so the server needs no compile step. That script also ran
+# `tsc --noEmit` over test files — one .spec.ts imports happy-app, which
+# the server-subgraph install deliberately omits — and bundled
+# standalone.ts with `bun`, absent here. Typecheck stays a CI concern
+# (full-monorepo test job), not a production image build step.
 
 # Stage 3: runtime
 FROM node:20 AS runner
