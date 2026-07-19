@@ -24,7 +24,16 @@ COPY packages/happy-server/prisma packages/happy-server/prisma
 COPY packages/happy-cli/scripts packages/happy-cli/scripts
 COPY packages/happy-cli/tools packages/happy-cli/tools
 
-RUN SKIP_HAPPY_WIRE_BUILD=1 pnpm install --frozen-lockfile
+# Install ONLY the server subgraph (happy-server-self-host + its workspace dep
+# @slopus/happy-wire), not the whole monorepo. A full install pulls the entire
+# happy-app graph (expo / react-native / ~2400 pkgs) the server never uses —
+# a ~2GB node_modules that kaniko then spends minutes snapshotting/extracting
+# every build. Both packages are selected with their full dep+devDep trees so
+# happy-wire can build (shx/pkgroll) and happy-wire is linked for the server.
+# --frozen-lockfile still validates against the full lockfile (all package.json
+# manifests are copied above).
+RUN SKIP_HAPPY_WIRE_BUILD=1 pnpm install --frozen-lockfile \
+      --filter happy-server-self-host... --filter @slopus/happy-wire...
 
 # Stage 2: build the server
 FROM deps AS builder
