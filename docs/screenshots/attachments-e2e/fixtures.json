@@ -1,0 +1,87 @@
+{
+  "fixtureDir": "~/tmp/happy-attachment-fixtures/",
+  "fixtures": [
+    {
+      "name": "photo.jpg",
+      "path": "~/tmp/happy-attachment-fixtures/photo.jpg",
+      "mimeType": "image/jpeg",
+      "sizeBytes": 2048,
+      "expectedRoute": "image",
+      "pushedTo": "sim Photos album (xcrun simctl addmedia)",
+      "usedInFlows": [1, 5, 9]
+    },
+    {
+      "name": "photo.heic",
+      "path": "~/tmp/happy-attachment-fixtures/photo.heic",
+      "mimeType": "image/heic",
+      "sizeBytes": 663,
+      "expectedRoute": "path (HEIC downgrade — Anthropic image block rejects HEIC media_type)",
+      "pushedTo": "sim Photos album (xcrun simctl addmedia); iOS normalizePickedAssetForUpload converts HEIC→JPEG on iOS so may reach CLI as image",
+      "usedInFlows": [8]
+    },
+    {
+      "name": "clip.mp4",
+      "path": "~/tmp/happy-attachment-fixtures/clip.mp4",
+      "mimeType": "video/mp4",
+      "sizeBytes": 17408,
+      "durationSeconds": 3,
+      "expectedRoute": "path (video → @<temp-path> reference in CLI)",
+      "pushedTo": "sim Photos album (xcrun simctl addmedia)",
+      "usedInFlows": [3, 5]
+    },
+    {
+      "name": "notes.md",
+      "path": "~/tmp/happy-attachment-fixtures/notes.md",
+      "mimeType": "text/markdown",
+      "sizeBytes": 166,
+      "expectedRoute": "path (text → @<temp-path> so Claude Read acts on it)",
+      "pushedTo": "sim FileProvider LocalStorage container (Files.app → On My iPhone)",
+      "usedInFlows": [4, 5]
+    },
+    {
+      "name": "small.pdf",
+      "path": "~/tmp/happy-attachment-fixtures/small.pdf",
+      "mimeType": "application/pdf",
+      "sizeBytes": 22528,
+      "expectedRoute": "document (PDF ≤22 MB → Anthropic document content block)",
+      "pushedTo": "sim FileProvider LocalStorage container",
+      "usedInFlows": [2, 5]
+    },
+    {
+      "name": "big.pdf",
+      "path": "~/tmp/happy-attachment-fixtures/big.pdf",
+      "mimeType": "application/pdf",
+      "sizeBytes": 26236928,
+      "expectedRoute": "path (25 MB PDF > 22 MB doc-block cap → downgrade to @path)",
+      "pushedTo": "sim FileProvider LocalStorage container",
+      "usedInFlows": [7]
+    },
+    {
+      "name": "huge.bin",
+      "path": "~/tmp/happy-attachment-fixtures/huge.bin",
+      "mimeType": "application/octet-stream",
+      "sizeBytes": 125829120,
+      "expectedRoute": "rejected client-side (120 MB > 100 MB cap in useImagePicker.MAX_FILE_SIZE)",
+      "pushedTo": "sim FileProvider LocalStorage container",
+      "usedInFlows": [6]
+    }
+  ],
+  "fixtureGenerationCommands": {
+    "photo.jpg": "ffmpeg -f lavfi -i 'color=c=blue:size=640x480:duration=1' -frames:v 1 photo.jpg",
+    "photo.heic": "sips -s format heic photo.jpg --out photo.heic",
+    "clip.mp4": "ffmpeg -f lavfi -i 'testsrc=duration=3:size=320x240:rate=30' -pix_fmt yuv420p clip.mp4",
+    "notes.md": "printf '# ...\\n' > notes.md",
+    "small.pdf": "cp /usr/share/cups/ipptool/onepage-letter.pdf small.pdf",
+    "big.pdf": "cp small.pdf big.pdf && dd if=/dev/urandom bs=1m count=25 >> big.pdf",
+    "huge.bin": "mkfile -n 120m huge.bin"
+  },
+  "simDevice": {
+    "name": "iPhone 17 Pro",
+    "iosVersion": "26.1",
+    "udid": "94565182-2D79-4D69-AE91-CA54BF0E4DE5"
+  },
+  "server": {
+    "url": "http://localhost:3005",
+    "storage": "local disk (./data/files/, isLocalStorage() = true)"
+  }
+}
