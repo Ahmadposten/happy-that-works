@@ -82,27 +82,24 @@ spec:
         container('kaniko') {
           script {
             def shortSha = env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'unknown'
-            // Kaniko tuning, learned from real runs:
+            // Kaniko tuning, learned from real runs on this monorepo:
+            //  NO --cache. Counter-intuitive but measured: caching the
+            //    `pnpm install` layer means every warm build does "Found cached
+            //    layer, extracting to filesystem" — kaniko unpacks a
+            //    node_modules layer of tens of thousands of tiny files onto
+            //    disk, which takes MANY minutes (and used to hang/evict the
+            //    agent). The filtered fresh install is ~40s. So skipping the
+            //    cache is strictly faster here — caching many-small-file layers
+            //    is a known kaniko anti-pattern.
             //  --snapshot-mode=redo — snapshot by mtime+size, not a full
-            //    content hash of every file. The default walked node_modules
-            //    (tens of thousands of files) taking ~4 min PER layer; redo is
-            //    seconds. (--single-snapshot doesn't help: --cache forces a
-            //    per-layer snapshot so each layer can be cached.)
-            //  --cache — apt + `pnpm install` layers land in the cache-repo, so
-            //    warm rebuilds skip them (install only re-runs when the lockfile
-            //    or a package.json changes).
-            //  Dropped --compressed-caching=false: it kept cache layers
-            //    UNCOMPRESSED in RAM and OOM-killed the container.
-            //  The Dockerfile filters the install to the server subgraph, so the
-            //    fs kaniko snapshots / stores across the multi-stage boundary is
-            //    small.
+            //    content hash of every file (that walk was ~4 min/layer).
+            //  Dropped --compressed-caching=false (it OOM-killed the container)
+            //    and --single-snapshot (no-op here).
             sh """/kaniko/executor \
               --context=git://github.com/Posten-Lab/happy-that-works.git#refs/heads/main \
               --dockerfile=Dockerfile.server \
               --destination=ahmadposten/happy-improved-server:latest \
               --destination=ahmadposten/happy-improved-server:git-${shortSha} \
-              --cache=true \
-              --cache-repo=ahmadposten/happy-improved-server-cache \
               --snapshot-mode=redo"""
           }
         }
